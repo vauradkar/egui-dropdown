@@ -11,6 +11,7 @@ exclude = ["/examples", "/media"]
 
 [dependencies]
 egui = { version = "0.31", default-features = false }
+egui_chip = "0.1.1"
 
 [dev-dependencies]
 eframe = "0.31"

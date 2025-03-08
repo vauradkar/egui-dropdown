@@ -1,36 +1,25 @@
 use eframe::{App, Frame, NativeOptions};
-use egui::Context;
+use egui::{text_edit::TextEditOutput, Context};
 use egui_dropdown::DropDownBox;
 
 struct ExampleApp {
     items: Vec<String>,
-    buf: String,
+    current: String,
 }
 
 impl App for ExampleApp {
     fn update(&mut self, ctx: &Context, _: &mut Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.add(
-                    DropDownBox::from_iter(
-                        &self.items,
-                        "test_dropbox",
-                        &mut self.buf,
-                        |ui, text| ui.selectable_label(false, text),
-                    )
-                    // choose whether to filter the box items based on what is in the text edit already
-                    // default is true when this is not used
-                    .filter_by_input(true)
-                    // choose whether to select all text in the text edit when it gets focused
-                    // default is false when this is not used
-                    .select_on_focus(true)
-                    // passes through the desired width to the text edit
-                    // default is None internally, so TextEdit does whatever its default implements
-                    .desired_width(250.0),
-                );
+                let dd: DropDownBox<'_, TextEditOutput, String> =
+                    DropDownBox::from_iter(&mut self.items, "test_dropbox", &mut self.current)
+                        // choose whether to filter the box items based on what is in the text edit already
+                        // default is true when this is not used
+                        .filter_by_input(true);
+                ui.add(dd);
 
                 if ui.button("Add").clicked() {
-                    self.items.push(self.buf.clone());
+                    self.items.push(self.current.clone());
                 }
             });
         });
@@ -49,7 +38,7 @@ fn main() {
                     "Third".into(),
                     "Other".into(),
                 ],
-                buf: String::new(),
+                current: String::new(),
             }))
         }),
     )

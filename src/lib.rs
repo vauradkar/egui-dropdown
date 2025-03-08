@@ -2,50 +2,102 @@
 
 #![warn(missing_docs)]
 
-use egui::{
-    text::{CCursor, CCursorRange},
-    Id, Response, ScrollArea, TextEdit, Ui, Widget, WidgetText,
-};
+use egui::{text_edit::TextEditOutput, Id, Response, ScrollArea, TextEdit, Ui, Widget, WidgetText};
+use egui_chip::{ChipEdit, ChipEditOutput};
 use std::hash::Hash;
 
-/// Dropdown widget
-pub struct DropDownBox<
-    'a,
-    F: FnMut(&mut Ui, &str) -> Response,
-    V: AsRef<str>,
-    I: Iterator<Item = V>,
-> {
-    buf: &'a mut String,
-    popup_id: Id,
-    display: F,
-    it: I,
-    hint_text: WidgetText,
-    filter_by_input: bool,
-    select_on_focus: bool,
-    desired_width: Option<f32>,
-    max_height: Option<f32>,
+/// Trait for editable responses
+pub trait EditableResponse {
+    /// Get the response of the widget
+    fn get_response(&self) -> &Response;
+
+    /// Check if the widget should show a popup
+    fn show_popup(&self) -> bool;
 }
 
-impl<'a, F: FnMut(&mut Ui, &str) -> Response, V: AsRef<str>, I: Iterator<Item = V>>
-    DropDownBox<'a, F, V, I>
-{
+impl EditableResponse for TextEditOutput {
+    fn get_response(&self) -> &Response {
+        &self.response
+    }
+
+    fn show_popup(&self) -> bool {
+        self.response.gained_focus()
+    }
+}
+
+impl EditableResponse for ChipEditOutput {
+    fn get_response(&self) -> &Response {
+        &self.response
+    }
+
+    fn show_popup(&self) -> bool {
+        self.gained_focus
+    }
+}
+
+/// Trait for editable widgets
+pub trait Editable<R: EditableResponse> {
+    /// Render the widget
+    fn show_uneditable(&mut self, ui: &mut Ui) -> Response;
+
+    /// Render the widget
+    fn show_editable(&mut self, ui: &mut Ui, hint_text: &str) -> R;
+
+    /// Get the text of the widget
+    fn text(&self) -> String;
+}
+
+impl Editable<TextEditOutput> for String {
+    fn show_uneditable(&mut self, ui: &mut Ui) -> Response {
+        ui.label(self.as_str())
+    }
+
+    fn show_editable(&mut self, ui: &mut Ui, hint_text: &str) -> TextEditOutput {
+        let edit = TextEdit::singleline(self).hint_text(hint_text);
+        edit.show(ui)
+    }
+
+    fn text(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl Editable<ChipEditOutput> for ChipEdit {
+    fn show_uneditable(&mut self, ui: &mut Ui) -> Response {
+        self.ui(ui)
+    }
+
+    fn show_editable(&mut self, ui: &mut Ui, _hint_text: &str) -> ChipEditOutput {
+        self.show(ui)
+    }
+
+    fn text(&self) -> String {
+        self.values().join(", ").to_string()
+    }
+}
+
+/// Dropdown widget
+pub struct DropDownBox<'a, Resp: EditableResponse, V: Editable<Resp> + Clone> {
+    current: &'a mut V,
+    popup_id: Id,
+    items: &'a mut [V],
+    hint_text: WidgetText,
+    filter_by_input: bool,
+    max_height: Option<f32>,
+    _marker: std::marker::PhantomData<Resp>,
+}
+
+impl<'a, R: EditableResponse, V: Editable<R> + Clone> DropDownBox<'a, R, V> {
     /// Creates new dropdown box.
-    pub fn from_iter(
-        it: impl IntoIterator<IntoIter = I>,
-        id_source: impl Hash,
-        buf: &'a mut String,
-        display: F,
-    ) -> Self {
+    pub fn from_iter(items: &'a mut [V], id_source: impl Hash, current: &'a mut V) -> Self {
         Self {
             popup_id: Id::new(id_source),
-            it: it.into_iter(),
-            display,
-            buf,
+            items,
+            current,
             hint_text: WidgetText::default(),
             filter_by_input: true,
-            select_on_focus: false,
-            desired_width: None,
             max_height: None,
+            _marker: std::marker::PhantomData,
         }
     }
 
@@ -61,18 +113,6 @@ impl<'a, F: FnMut(&mut Ui, &str) -> Response, V: AsRef<str>, I: Iterator<Item = 
         self
     }
 
-    /// Determine whether to select the text when the Text Edit gains focus
-    pub fn select_on_focus(mut self, select_on_focus: bool) -> Self {
-        self.select_on_focus = select_on_focus;
-        self
-    }
-
-    /// Passes through the desired width value to the underlying Text Edit
-    pub fn desired_width(mut self, desired_width: f32) -> Self {
-        self.desired_width = desired_width.into();
-        self
-    }
-
     /// Set a maximum height limit for the opened popup
     pub fn max_height(mut self, height: f32) -> Self {
         self.max_height = height.into();
@@ -80,39 +120,21 @@ impl<'a, F: FnMut(&mut Ui, &str) -> Response, V: AsRef<str>, I: Iterator<Item = 
     }
 }
 
-impl<F: FnMut(&mut Ui, &str) -> Response, V: AsRef<str>, I: Iterator<Item = V>> Widget
-    for DropDownBox<'_, F, V, I>
-{
+impl<R: EditableResponse, V: Editable<R> + Clone> Widget for DropDownBox<'_, R, V> {
     fn ui(self, ui: &mut Ui) -> Response {
         let Self {
             popup_id,
-            buf,
-            it,
-            mut display,
+            current,
+            items,
             hint_text,
             filter_by_input,
-            select_on_focus,
-            desired_width,
             max_height,
+            _marker: std::marker::PhantomData,
         } = self;
 
-        let mut edit = TextEdit::singleline(buf).hint_text(hint_text);
-        if let Some(dw) = desired_width {
-            edit = edit.desired_width(dw);
-        }
-        let mut edit_output = edit.show(ui);
-        let mut r = edit_output.response;
-        if r.gained_focus() {
-            if select_on_focus {
-                edit_output
-                    .state
-                    .cursor
-                    .set_char_range(Some(CCursorRange::two(
-                        CCursor::new(0),
-                        CCursor::new(buf.len()),
-                    )));
-                edit_output.state.store(ui.ctx(), r.id);
-            }
+        let edit_output = current.show_editable(ui, hint_text.text());
+        let mut response = edit_output.get_response().to_owned();
+        if edit_output.show_popup() {
             ui.memory_mut(|m| m.open_popup(popup_id));
         }
 
@@ -120,7 +142,7 @@ impl<F: FnMut(&mut Ui, &str) -> Response, V: AsRef<str>, I: Iterator<Item = V>> 
         egui::popup_below_widget(
             ui,
             popup_id,
-            &r,
+            &response,
             egui::PopupCloseBehavior::CloseOnClick,
             |ui| {
                 if let Some(max) = max_height {
@@ -130,17 +152,19 @@ impl<F: FnMut(&mut Ui, &str) -> Response, V: AsRef<str>, I: Iterator<Item = V>> 
                 ScrollArea::vertical()
                     .max_height(f32::INFINITY)
                     .show(ui, |ui| {
-                        for var in it {
-                            let text = var.as_ref();
+                        for item in items {
                             if filter_by_input
-                                && !buf.is_empty()
-                                && !text.to_lowercase().contains(&buf.to_lowercase())
+                                && !current.text().is_empty()
+                                && !item
+                                    .text()
+                                    .to_lowercase()
+                                    .contains(&current.text().to_lowercase())
                             {
                                 continue;
                             }
 
-                            if display(ui, text).clicked() {
-                                *buf = text.to_owned();
+                            if item.show_uneditable(ui).clicked() {
+                                *current = item.clone();
                                 changed = true;
 
                                 ui.memory_mut(|m| m.close_popup());
@@ -151,9 +175,9 @@ impl<F: FnMut(&mut Ui, &str) -> Response, V: AsRef<str>, I: Iterator<Item = V>> 
         );
 
         if changed {
-            r.mark_changed();
+            response.mark_changed();
         }
 
-        r
+        response.to_owned()
     }
 }
