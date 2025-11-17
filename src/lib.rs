@@ -167,7 +167,7 @@ impl<R: EditableResponse, V: Editable<R> + Clone> Widget for DropDownBox<'_, R, 
                                 *current = item.clone();
                                 changed = true;
 
-                                ui.memory_mut(|m| m.close_popup());
+                                ui.memory_mut(|m| m.close_popup(self.popup_id));
                             }
                         }
                     });

@@ -10,8 +10,8 @@ readme = "README.md"
 exclude = ["/examples", "/media"]
 
 [dependencies]
-egui = { version = "0.31", default-features = false }
-egui_chip = "0.2.0"
+egui = { version = "0.33", default-features = false }
+egui_chip = "0.3.1"
 
 [dev-dependencies]
-eframe = "0.31"
+eframe = "0.33"
